@@ -1,0 +1,72 @@
+---
+title: "Turismo Meli"
+author: "Santiago Rossi"
+date: "12/10/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+```
+
+
+
+```{r cars}
+var_ia <- function(x, lag){(x- lag(x,lag))/x}
+
+df_turismo <- read.csv("df_total_meli.csv",fill = T,sep=";",dec = ",")
+
+df_turismo <- df_turismo %>% mutate(periodo = as.Date(periodo,format="%d/%m/%Y"))
+
+df_turismo <- df_turismo %>% mutate(Turistas_var =  var_ia(x = Turistas,lag = 12),
+                                    TCR_var = var_ia(x = TCR, lag = 12),
+                                    Salario_var = var_ia(Salario...tcr,lag = 12),
+                                    anio =lubridate::year(periodo),
+                                    cepo = case_when(anio >2011 & anio<2016~1, T~0),
+                                    PIB_var = PIB/100)
+
+summary(df_turismo)
+
+```
+
+
+
+## Including Plots
+
+
+```{r pressure, echo=FALSE}
+ggplot(df_turismo,aes(periodo,  lag(TCR_var,3), group=1))+
+  geom_line()+theme_bw()+
+  geom_line(aes(y=Turistas_var),col="red")+
+  geom_line(aes(y = PIB_var), col = "blue")
+
+
+ggplot(df_turismo,aes(Turistas_var, lag(TCR_var,3), color=as.factor(anio) ))+
+  geom_point()+theme_bw()
+
+```
+
+```{r pressure, echo=FALSE}
+lm(data = df_turismo,formula = Turistas_var ~ lag(TCR_var,5) + 
+     lag(TCR_var,3) + PIB_var + lag(PIB_var,3)) %>% summary
+```
+
+
+```{r pressure, echo=FALSE}
+# Chequeo la estacionalidad
+
+df_turismo1 <- df_turismo %>% 
+  filter(!is.na(Turistas_var))
+
+library(tseries)
+
+print(adf.test(df_turismo1$Turistas_var))
+# Estacionaria
+print(adf.test(df_turismo1$TCR_var))
+# Estacionaria
+print(adf.test(df_turismo1$PIB_var))
+# Estacionaria
+print(adf.test(df_turismo1$PIB))
+# Estacionaria
+```
