@@ -1,6 +1,6 @@
 ---
-title: "Turismo Meli"
-author: "Santiago Rossi"
+title: "TP Turismo"
+author: "Melina D'Alessandro"
 date: "12/10/2020"
 output: html_document
 ---
