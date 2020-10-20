@@ -1,6 +1,6 @@
 ---
-title: "TP Turismo"
-author: "Melina D'Alessandro"
+title: "Turismo Meli"
+author: "Santiago Rossi"
 date: "12/10/2020"
 output: html_document
 ---
@@ -8,65 +8,788 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 library(tidyverse)
+#install.packages("feasts")
+library(feasts)
+library(lubridate)
+library(tsibble)
 ```
 
+```{r}
+#https://robjhyndman.com/hyndsight/tsibbles/
+# https://robjhyndman.com/hyndsight/feasts/
+#https://nwfsc-timeseries.github.io/atsa-labs/sec-boxjenkins-kpss.html
+```
 
 
 ```{r cars}
-var_ia <- function(x, lag){(x- lag(x,lag))/x}
+# Se crean las variables con variaciones
+#var_ia <- function(x, lag){(x- lag(x,lag))/x}
+#
+#df_turismo <- read.csv("df_total_meli.csv",fill = T,sep=";",dec = ",")
+#
+#df_turismo <- df_turismo %>% mutate(periodo = as.Date(periodo,format="%d/%m/%Y"))
+#
+#df_turismo <- df_turismo %>% mutate(Turistas_var =  var_ia(x = Turistas,lag = 12),
+#                                    TCR_var = var_ia(x = TCR, lag = 12),
+#                                    Salario_var = var_ia(Salario...tcr,lag = 12),
+#                                    anio =lubridate::year(periodo),
+#                                    cepo = case_when(anio >2011 & anio<2016~1, T~0),
+#                                    PIB_var = PIB/100)
+#
+#summary(df_turismo)
 
-df_turismo <- read.csv("df_total_meli.csv",fill = T,sep=";",dec = ",")
+```
 
-df_turismo <- df_turismo %>% mutate(periodo = as.Date(periodo,format="%d/%m/%Y"))
+```{r pressure, echo=FALSE}
+#ggplot(df_turismo,aes(periodo,  lag(TCR_var,3), group=1))+
+#  geom_line()+theme_bw()+
+#  geom_line(aes(y=Turistas_var),col="red")+
+#  geom_line(aes(y = PIB_var), col = "blue")
+#
+#
+#ggplot(df_turismo,aes(Turistas_var, lag(TCR_var,3), color=as.factor(anio) ))+
+#  geom_point()+theme_bw()
+#
+```
 
-df_turismo <- df_turismo %>% mutate(Turistas_var =  var_ia(x = Turistas,lag = 12),
-                                    TCR_var = var_ia(x = TCR, lag = 12),
-                                    Salario_var = var_ia(Salario...tcr,lag = 12),
-                                    anio =lubridate::year(periodo),
-                                    cepo = case_when(anio >2011 & anio<2016~1, T~0),
-                                    PIB_var = PIB/100)
+```{r pressure, echo=FALSE}
+#lm(data = df_turismo,formula = Turistas_var ~ lag(TCR_var,5) + 
+#     lag(TCR_var,2) + PIB_var + lag(PIB_var,3)) %>% summary
+```
 
-summary(df_turismo)
+## ORIGINAL
+
+```{r}
+# Obtengo el dataset original con cant de turistas nominales
+
+df_original <- read.csv("df_final_coma.csv", stringsAsFactors = FALSE, dec = ",")
+
+str(df_original)
+
+df_original <- df_original %>% 
+  mutate(periodo = as.Date(X)) %>% 
+  mutate_if(is.character, as.numeric) %>% 
+  select(-X)
+
+#str(df_original)
+
+#df_original <- df_original %>% 
+#  mutate(periodo = as.Date(X),
+#         Turistas = as.numeric(gsub(",",".", Turistas))) %>% 
+#  mutate_if(is.character, as.numeric) %>% 
+#  select(-X)
+```
+
+
+```{r}
+# Separacion train y test
+
+df_turismo <- read.csv("df_variaciones.csv",fill = T, dec = ".", stringsAsFactors = FALSE)
+
+df_turismo <- df_turismo %>% 
+  select(periodo, Turistas_var, TCR_var, Salario_var, PIB_var) %>% 
+  mutate(periodo = ymd(periodo))
+
+df_turismo <- df_turismo %>%
+  mutate(YearMonth = yearmonth(as.character(periodo))) %>%
+  as_tsibble(index = YearMonth)
+
+df_turismo2 <- left_join(df_turismo, df_original, by = "periodo")
+
+```
+
+```{r}
+#df_train %>% gg_season(Turistas_var)
+#
+df_train %>% gg_lag(Turistas_var, geom="point", lags = 1:12)
+
+df_train %>% forecast::gglagplot(Turistas_var)
+
+```
+## DATA FRAME
+
+```{r}
+df_turismo1 <- df_turismo2 %>% 
+  mutate(Turistas_var_1 = lag(Turistas_var,1),
+         Turistas_var_2 = lag(Turistas_var,2),
+         Turistas_var_3 = lag(Turistas_var,3),
+         Turistas_var_12 = lag(Turistas_var,12),
+         TCR_var_1 = lag(TCR_var,1),
+         TCR_var_2 = lag(TCR_var,2),
+         TCR_var_3 = lag(TCR_var,3),
+         TCR_var_12 = lag(TCR_var,12),
+         TCR_var_5 = lag(TCR_var,5),
+         PIB_var_1 = lag(PIB_var,1),
+         PIB_var_2 = lag(PIB_var,2),
+         PIB_var_3 = lag(PIB_var,3),
+         PIB_var_12 = lag(PIB_var,12))
+
+df_train <- df_turismo1 %>%
+  filter(periodo < '2019-03-01')
+
+df_test <- df_turismo1 %>% 
+  filter(periodo >= '2019-03-01')
+
+```
+
+
+Estimaciones de modelos
+
+## MODELO 1 - 18792.55
+
+```{r}
+m1 <- lm(data = df_train, formula = Turistas_var ~ TCR_var_1 + TCR_var_2 + TCR_var_3 + TCR_var_12 + PIB_var + PIB_var_1 + PIB_var_2 + PIB_var_3 + PIB_var_12)
+
+summary(m1)
+AIC(m1)
+
+pred1 <- predict(m1, newdata = df_test)
+#rmse <- sqrt(sum((exp(pred1) - df_test$Turistas_var)^2)/length(df_test$Turistas_var))
+mse <- sum((exp(pred1) - df_test$Turistas_var)^2)/length(df_test$Turistas_var)
+mse
+#RMSE(pred1, df_test$Turistas_var)
+#c(RMSE = rmse, R2=summary(m1)$r.squared)
+
+```
+
+```{r}
+prediction <- pred1 %>% 
+  as.data.frame() %>% 
+  rename(prediction = ".")
+
+df_prediction <- bind_cols(df_test, prediction) %>% 
+  select(periodo, Turistas_var, prediction)
+
+df_original1 <- left_join(df_original, df_prediction, by = "periodo")
+
+df_original1 <- df_original1 %>% 
+  mutate(cant_turistas_prediction = Turistas * ((- Turistas_var + 1) / (- prediction + 1)))
+
+df_cant_turistas_pred <- df_original1 %>% 
+  filter(!is.na(cant_turistas_prediction)) %>% 
+  select(cant_turistas_prediction, periodo)
+
+df_cant_turistas_pred <- left_join(df_cant_turistas_pred, df_original %>% select(periodo, Turistas), by = "periodo")
+
+ggplot(data = df_original1) +
+  geom_line(mapping = aes(x = periodo, y = Turistas)) +
+  geom_vline(xintercept = as.Date('2019-03-01'), linetype="dotted", color = "red") +
+  geom_line(data = df_cant_turistas_pred, mapping = aes(x = periodo, y = cant_turistas_prediction), colour ="blue")
+```
+
+```{r}
+# Calculo del error cuadratico medio para la cantidad de turistas
+
+rmse <- sqrt(sum((df_cant_turistas_pred$cant_turistas_prediction - df_cant_turistas_pred$Turistas)^2)/length(df_test$Turistas_var))
+rmse
+
+```
+
+
+## MODELO 2 - 8612.088
+
+```{r}
+m2 <- lm(data = df_train, formula = Turistas_var ~ TCR_var_3)
+
+summary(m2)
+AIC(m2)
+
+pred1 <- predict(m2, newdata = df_test)
+#rmse <- sqrt(sum((exp(pred1) - df_test$Turistas_var)^2)/length(df_test$Turistas_var))
+mse <- sum((exp(pred1) - df_test$Turistas_var)^2)/length(df_test$Turistas_var)
+mse
+#RMSE(pred1, df_test$Turistas_var)
+#c(RMSE = rmse, R2=summary(m2)$r.squared)
+
+```
+
+```{r}
+prediction <- pred1 %>% 
+  as.data.frame() %>% 
+  rename(prediction = ".")
+
+df_prediction <- bind_cols(df_test, prediction) %>% 
+  select(periodo, Turistas_var, prediction)
+
+df_original1 <- left_join(df_original, df_prediction, by = "periodo")
+
+df_original1 <- df_original1 %>% 
+  mutate(cant_turistas_prediction = Turistas * ((- Turistas_var + 1) / (- prediction + 1)))
+
+df_cant_turistas_pred <- df_original1 %>% 
+  filter(!is.na(cant_turistas_prediction)) %>% 
+  select(cant_turistas_prediction, periodo)
+
+df_cant_turistas_pred <- left_join(df_cant_turistas_pred, df_original %>% select(periodo, Turistas), by = "periodo")
+
+ggplot(data = df_original1) +
+  geom_line(mapping = aes(x = periodo, y = Turistas)) +
+  geom_vline(xintercept = as.Date('2019-03-01'), linetype="dotted", color = "red") +
+  geom_line(data = df_cant_turistas_pred, mapping = aes(x = periodo, y = cant_turistas_prediction), colour ="blue")
+```
+
+
+```{r}
+# Calculo del error cuadratico medio para la cantidad de turistas
+
+rmse <- sqrt(sum((df_cant_turistas_pred$cant_turistas_prediction - df_cant_turistas_pred$Turistas)^2)/length(df_test$Turistas_var))
+rmse
+
+```
+
+## MODELO 3 - 9199.639
+
+```{r}
+m3 <- lm(data = df_train, formula = Turistas_var ~ TCR_var_1 + TCR_var_2 + TCR_var_3 + PIB_var_1 + PIB_var_2 + PIB_var_3)
+
+summary(m3)
+AIC(m3)
+
+pred1 <- predict(m3, newdata = df_test)
+#rmse <- sqrt(sum((exp(pred1) - df_test$Turistas_var)^2)/length(df_test$Turistas_var))
+mse <- sum((exp(pred1) - df_test$Turistas_var)^2)/length(df_test$Turistas_var)
+mse
+#RMSE(pred1, df_test$Turistas_var)
+#c(RMSE = rmse, R2=summary(m1)$r.squared)
+
+```
+
+
+```{r}
+prediction <- pred1 %>% 
+  as.data.frame() %>% 
+  rename(prediction = ".")
+
+df_prediction <- bind_cols(df_test, prediction) %>% 
+  select(periodo, Turistas_var, prediction)
+
+df_original1 <- left_join(df_original, df_prediction, by = "periodo")
+
+df_original1 <- df_original1 %>% 
+  mutate(cant_turistas_prediction = Turistas * ((- Turistas_var + 1) / (- prediction + 1)))
+
+df_cant_turistas_pred <- df_original1 %>% 
+  filter(!is.na(cant_turistas_prediction)) %>% 
+  select(cant_turistas_prediction, periodo)
+
+df_cant_turistas_pred <- left_join(df_cant_turistas_pred, df_original %>% select(periodo, Turistas), by = "periodo")
+
+ggplot(data = df_original1) +
+  geom_line(mapping = aes(x = periodo, y = Turistas)) +
+  geom_vline(xintercept = as.Date('2019-03-01'), linetype="dotted", color = "red") +
+  geom_line(data = df_cant_turistas_pred, mapping = aes(x = periodo, y = cant_turistas_prediction), colour ="blue")
+```
+
+```{r}
+# Calculo del error cuadratico medio para la cantidad de turistas
+
+rmse <- sqrt(sum((df_cant_turistas_pred$cant_turistas_prediction - df_cant_turistas_pred$Turistas)^2)/length(df_test$Turistas_var))
+rmse
+
+```
+
+## MODELO 4 - 9323.251
+
+```{r}
+m5 <- lm(data = df_train, formula = Turistas_var ~ TCR_var_2 + TCR_var_3 + PIB_var_2 + PIB_var_3)
+
+summary(m5)
+AIC(m5)
+
+pred1 <- predict(m5, newdata = df_test)
+#rmse <- sqrt(sum((exp(pred1) - df_test$Turistas_var)^2)/length(df_test$Turistas_var))
+mse <- sum((exp(pred1) - df_test$Turistas_var)^2)/length(df_test$Turistas_var)
+mse
+#RMSE(pred1, df_test$Turistas_var)
+#c(RMSE = rmse, R2=summary(m1)$r.squared)
+
+```
+
+
+```{r}
+prediction <- pred1 %>% 
+  as.data.frame() %>% 
+  rename(prediction = ".")
+
+df_prediction <- bind_cols(df_test, prediction) %>% 
+  select(periodo, Turistas_var, prediction)
+
+df_original1 <- left_join(df_original, df_prediction, by = "periodo")
+
+df_original1 <- df_original1 %>% 
+  mutate(cant_turistas_prediction = Turistas * ((- Turistas_var + 1) / (- prediction + 1)))
+
+df_cant_turistas_pred <- df_original1 %>% 
+  filter(!is.na(cant_turistas_prediction)) %>% 
+  select(cant_turistas_prediction, periodo)
+
+df_cant_turistas_pred <- left_join(df_cant_turistas_pred, df_original %>% select(periodo, Turistas), by = "periodo")
+
+ggplot(data = df_original1) +
+  geom_line(mapping = aes(x = periodo, y = Turistas)) +
+  geom_vline(xintercept = as.Date('2019-03-01'), linetype="dotted", color = "red") +
+  geom_line(data = df_cant_turistas_pred, mapping = aes(x = periodo, y = cant_turistas_prediction), colour ="blue")
+```
+
+```{r}
+# Calculo del error cuadratico medio para la cantidad de turistas
+
+rmse <- sqrt(sum((df_cant_turistas_pred$cant_turistas_prediction - df_cant_turistas_pred$Turistas)^2)/length(df_test$Turistas_var))
+rmse
+
+```
+
+# MODELO 5 - 8802.34
+
+```{r}
+m4 <- lm(data = df_train, formula = Turistas_var ~ TCR_var_3 + PIB_var)
+
+summary(m4)
+AIC(m4)
+
+pred1 <- predict(m4, newdata = df_test)
+#rmse <- sqrt(sum((exp(pred1) - df_test$Turistas_var)^2)/length(df_test$Turistas_var))
+mse <- sum((exp(pred1) - df_test$Turistas_var)^2)/length(df_test$Turistas_var)
+mse
+#RMSE(pred1, df_test$Turistas_var)
+#c(RMSE = rmse, R2=summary(m1)$r.squared)
+
+```
+
+
+```{r}
+prediction <- pred1 %>% 
+  as.data.frame() %>% 
+  rename(prediction = ".")
+
+df_prediction <- bind_cols(df_test, prediction) %>% 
+  select(periodo, Turistas_var, prediction)
+
+df_original1 <- left_join(df_original, df_prediction, by = "periodo")
+
+df_original1 <- df_original1 %>% 
+  mutate(cant_turistas_prediction = Turistas * ((- Turistas_var + 1) / (- prediction + 1)))
+
+df_cant_turistas_pred <- df_original1 %>% 
+  filter(!is.na(cant_turistas_prediction)) %>% 
+  select(cant_turistas_prediction, periodo)
+
+df_cant_turistas_pred <- left_join(df_cant_turistas_pred, df_original %>% select(periodo, Turistas), by = "periodo")
+
+ggplot(data = df_original1) +
+  geom_line(mapping = aes(x = periodo, y = Turistas)) +
+  geom_vline(xintercept = as.Date('2019-03-01'), linetype="dotted", color = "red") +
+  geom_line(data = df_cant_turistas_pred, mapping = aes(x = periodo, y = cant_turistas_prediction), colour ="blue")
+```
+
+```{r}
+# Calculo del error cuadratico medio para la cantidad de turistas
+
+rmse <- sqrt(sum((df_cant_turistas_pred$cant_turistas_prediction - df_cant_turistas_pred$Turistas)^2)/length(df_test$Turistas_var))
+rmse
+
+```
+
+# MODELO 6 - 11566.21
+
+```{r}
+m6 <- lm(data = df_train, formula = Turistas_var ~ TCR_var_12 + PIB_var_2 + PIB_var_3 + PIB_var_12)
+
+summary(m6)
+AIC(m6)
+
+pred1 <- predict(m6, newdata = df_test)
+#rmse <- sqrt(sum((exp(pred1) - df_test$Turistas_var)^2)/length(df_test$Turistas_var))
+mse <- sum((exp(pred1) - df_test$Turistas_var)^2)/length(df_test$Turistas_var)
+mse
+#RMSE(pred1, df_test$Turistas_var)
+#c(RMSE = rmse, R2=summary(m1)$r.squared)
+```
+```{r}
+prediction <- pred1 %>% 
+  as.data.frame() %>% 
+  rename(prediction = ".")
+
+df_prediction <- bind_cols(df_test, prediction) %>% 
+  select(periodo, Turistas_var, prediction)
+
+df_original1 <- left_join(df_original, df_prediction, by = "periodo")
+
+df_original1 <- df_original1 %>% 
+  mutate(cant_turistas_prediction = Turistas * ((- Turistas_var + 1) / (- prediction + 1)))
+
+df_cant_turistas_pred <- df_original1 %>% 
+  filter(!is.na(cant_turistas_prediction)) %>% 
+  select(cant_turistas_prediction, periodo)
+
+df_cant_turistas_pred <- left_join(df_cant_turistas_pred, df_original %>% select(periodo, Turistas), by = "periodo")
+
+ggplot(data = df_original1) +
+  geom_line(mapping = aes(x = periodo, y = Turistas)) +
+  geom_vline(xintercept = as.Date('2019-03-01'), linetype="dotted", color = "red") +
+  geom_line(data = df_cant_turistas_pred, mapping = aes(x = periodo, y = cant_turistas_prediction), colour ="blue")
+```
+
+```{r}
+# Calculo del error cuadratico medio para la cantidad de turistas
+
+rmse <- sqrt(sum((df_cant_turistas_pred$cant_turistas_prediction - df_cant_turistas_pred$Turistas)^2)/length(df_test$Turistas_var))
+rmse
+
+```
+
+# MODELO 7 - 7803.423 TCR2 + PIB
+
+```{r}
+m7 <- lm(data = df_train, formula = Turistas_var ~ TCR_var_2 + PIB)
+
+#colnames(df_train)
+
+summary(m7)
+#AIC(m6)
+
+pred1 <- predict(m7, newdata = df_test)
+#rmse <- sqrt(sum((exp(pred1) - df_test$Turistas_var)^2)/length(df_test$Turistas_var))
+mse <- sum((exp(pred1) - df_test$Turistas_var)^2)/length(df_test$Turistas_var)
+mse
+#RMSE(pred1, df_test$Turistas_var)
+#c(RMSE = rmse, R2=summary(m1)$r.squared)
+```
+```{r}
+ccf(df_train$TCR_var, df_train$PIB, 12)
+
+ccfvalues = ccf(df_train$TCR_var, df_train$Turistas_var)
+ccfvalues
+
+acf2(residuals(m7))
+
+```
+
+```{r}
+prediction <- pred1 %>% 
+  as.data.frame() %>% 
+  rename(prediction = ".")
+
+df_prediction <- bind_cols(df_test, prediction) %>% 
+  select(periodo, Turistas_var, prediction)
+
+df_original1 <- left_join(df_original, df_prediction, by = "periodo")
+
+df_original1 <- df_original1 %>% 
+  mutate(cant_turistas_prediction = Turistas * ((- Turistas_var + 1) / (- prediction + 1)))
+
+df_cant_turistas_pred <- df_original1 %>% 
+  filter(!is.na(cant_turistas_prediction)) %>% 
+  select(cant_turistas_prediction, periodo)
+
+df_cant_turistas_pred <- left_join(df_cant_turistas_pred, df_original %>% select(periodo, Turistas), by = "periodo")
+
+ggplot(data = df_original1) +
+  geom_line(mapping = aes(x = periodo, y = Turistas)) +
+  geom_vline(xintercept = as.Date('2019-03-01'), linetype="dotted", color = "red") +
+  geom_line(data = df_cant_turistas_pred, mapping = aes(x = periodo, y = cant_turistas_prediction), colour ="blue")
+```
+
+```{r}
+# Calculo del error cuadratico medio para la cantidad de turistas
+
+rmse <- sqrt(sum((df_cant_turistas_pred$cant_turistas_prediction - df_cant_turistas_pred$Turistas)^2)/length(df_test$Turistas_var))
+rmse
+
+```
+
+# MODELO 8 - 8117.027
+
+```{r}
+colnames(df_train)
+```
+
+
+```{r}
+m7 <- lm(data = df_train, formula = Turistas_var ~ TCR_var_2 + Turistas_var_2)
+
+summary(m7)
+#AIC(m6)
+
+df_test1 <- df_test
+
+lag = 1
+
+for(i in lag:nrow(df_test1)){
+  pred1 <- predict(m7, newdata = df_test1)
+
+  prediction <- pred1 %>% 
+  as.data.frame() %>% 
+  rename(prediction = ".")
+  
+  df_test1$Turistas_var[i] <- prediction$prediction[i]
+  
+  if(i <= (nrow(df_test)-(lag+1))){
+  df_test1$Turistas_var_2[i+2] <- df_test1$Turistas_var[i]
+  }
+  i = i + 1
+}
+
+pred1 <- predict(m7, newdata = df_test1)
+
+prediction <- pred1 %>% 
+  as.data.frame() %>% 
+  rename(prediction = ".")
+
+#write.csv(prediction, "prediction_lm_lag.csv", row.names = FALSE)
+
+#rmse <- sqrt(sum((exp(pred1) - df_test$Turistas_var)^2)/length(df_test$Turistas_var))
+mse <- sum((exp(pred1) - df_test$Turistas_var)^2)/length(df_test$Turistas_var)
+mse
+#RMSE(pred1, df_test$Turistas_var)
+#c(RMSE = rmse, R2=summary(m1)$r.squared)
+```
+
+```{r}
+#install.packages("astsa")
+library(astsa)
+
+ccf(df_train$TCR_var, df_train$Turistas_var, 12)
+
+ccfvalues = ccf(df_train$TCR_var, df_train$Turistas_var)
+ccfvalues
+
+acf2(residuals(m7))
+
+```
+
+```{r}
+prediction <- pred1 %>% 
+  as.data.frame() %>% 
+  rename(prediction = ".")
+
+df_prediction <- bind_cols(df_test, prediction) %>% 
+  select(periodo, Turistas_var, prediction)
+
+df_original1 <- left_join(df_original, df_prediction, by = "periodo")
+
+df_original1 <- df_original1 %>% 
+  mutate(cant_turistas_prediction = Turistas * ((- Turistas_var + 1) / (- prediction + 1)))
+
+df_cant_turistas_pred <- df_original1 %>% 
+  filter(!is.na(cant_turistas_prediction)) %>% 
+  select(cant_turistas_prediction, periodo)
+
+df_cant_turistas_pred <- left_join(df_cant_turistas_pred, df_original %>% select(periodo, Turistas), by = "periodo")
+
+ggplot(data = df_original1) +
+  geom_line(mapping = aes(x = periodo, y = Turistas)) +
+  geom_vline(xintercept = as.Date('2019-03-01'), linetype="dotted", color = "red") +
+  geom_line(data = df_cant_turistas_pred, mapping = aes(x = periodo, y = cant_turistas_prediction), colour ="blue")
+```
+
+```{r}
+# Calculo del error cuadratico medio para la cantidad de turistas
+
+rmse <- sqrt(sum((df_cant_turistas_pred$cant_turistas_prediction - df_cant_turistas_pred$Turistas)^2)/length(df_test$Turistas_var))
+rmse
+
+```
+
+# MODELO 9 - 7975.67 TCR2
+
+```{r}
+colnames(df_train)
+```
+
+
+```{r}
+m7 <- lm(data = df_train, formula = Turistas_var ~ TCR_var_2)
+
+summary(m7)
+#AIC(m6)
+
+pred1 <- predict(m7, newdata = df_test)
+#rmse <- sqrt(sum((exp(pred1) - df_test$Turistas_var)^2)/length(df_test$Turistas_var))
+mse <- sum((exp(pred1) - df_test$Turistas_var)^2)/length(df_test$Turistas_var)
+mse
+#RMSE(pred1, df_test$Turistas_var)
+#c(RMSE = rmse, R2=summary(m1)$r.squared)
+```
+
+```{r}
+prediction <- pred1 %>% 
+  as.data.frame() %>% 
+  rename(prediction = ".")
+
+df_prediction <- bind_cols(df_test, prediction) %>% 
+  select(periodo, Turistas_var, prediction)
+
+df_original1 <- left_join(df_original, df_prediction, by = "periodo")
+
+df_original1 <- df_original1 %>% 
+  mutate(cant_turistas_prediction = Turistas * ((- Turistas_var + 1) / (- prediction + 1)))
+
+df_cant_turistas_pred <- df_original1 %>% 
+  filter(!is.na(cant_turistas_prediction)) %>% 
+  select(cant_turistas_prediction, periodo)
+
+df_cant_turistas_pred <- left_join(df_cant_turistas_pred, df_original %>% select(periodo, Turistas), by = "periodo")
+
+ggplot(data = df_original1) +
+  geom_line(mapping = aes(x = periodo, y = Turistas)) +
+  geom_vline(xintercept = as.Date('2019-03-01'), linetype="dotted", color = "red") +
+  geom_line(data = df_cant_turistas_pred, mapping = aes(x = periodo, y = cant_turistas_prediction), colour ="blue")
+```
+
+```{r}
+# Calculo del error cuadratico medio para la cantidad de turistas
+
+rmse <- sqrt(sum((df_cant_turistas_pred$cant_turistas_prediction - df_cant_turistas_pred$Turistas)^2)/length(df_test$Turistas_var))
+rmse
 
 ```
 
 
 
-## Including Plots
+## MODELO SANTI - 9501.277
 
+```{r}
+s1 <- lm(data = df_train, formula = Turistas_var ~ TCR_var_2 + TCR_var_5 + PIB_var + PIB_var_3)
 
-```{r pressure, echo=FALSE}
-ggplot(df_turismo,aes(periodo,  lag(TCR_var,3), group=1))+
-  geom_line()+theme_bw()+
-  geom_line(aes(y=Turistas_var),col="red")+
-  geom_line(aes(y = PIB_var), col = "blue")
+summary(s1)
 
-
-ggplot(df_turismo,aes(Turistas_var, lag(TCR_var,3), color=as.factor(anio) ))+
-  geom_point()+theme_bw()
-
+pred1 <- predict(s1, newdata = df_test)
+#rmse <- sqrt(sum((exp(pred1) - df_test$Turistas_var)^2)/length(df_test$Turistas_var))
+mse <- sum((exp(pred1) - df_test$Turistas_var)^2)/length(df_test$Turistas_var)
+mse
+#RMSE(pred1, df_test$Turistas_var)
+#c(RMSE = rmse, R2=summary(m1)$r.squared)
 ```
 
-```{r pressure, echo=FALSE}
-lm(data = df_turismo,formula = Turistas_var ~ lag(TCR_var,5) + 
+```{r}
+prediction <- pred1 %>% 
+  as.data.frame() %>% 
+  rename(prediction = ".")
+
+df_prediction <- bind_cols(df_test, prediction) %>% 
+  select(periodo, Turistas_var, prediction)
+
+df_original1 <- left_join(df_original, df_prediction, by = "periodo")
+
+df_original1 <- df_original1 %>% 
+  mutate(cant_turistas_prediction = Turistas * ((- Turistas_var + 1) / (- prediction + 1)))
+
+df_cant_turistas_pred <- df_original1 %>% 
+  filter(!is.na(cant_turistas_prediction)) %>% 
+  select(cant_turistas_prediction, periodo)
+
+df_cant_turistas_pred <- left_join(df_cant_turistas_pred, df_original %>% select(periodo, Turistas), by = "periodo")
+
+ggplot(data = df_original1) +
+  geom_line(mapping = aes(x = periodo, y = Turistas)) +
+  geom_vline(xintercept = as.Date('2019-03-01'), linetype="dotted", color = "red") +
+  geom_line(data = df_cant_turistas_pred, mapping = aes(x = periodo, y = cant_turistas_prediction), colour ="blue")
+```
+
+```{r}
+# Calculo del error cuadratico medio para la cantidad de turistas
+
+rmse <- sqrt(sum((df_cant_turistas_pred$cant_turistas_prediction - df_cant_turistas_pred$Turistas)^2)/length(df_test$Turistas_var))
+rmse
+
+```
+## OTROS MODELOS
+
+```{r}
+m1 <- lm(data = df_train,formula = Turistas_var ~ lag(TCR_var,5) + 
+     lag(TCR_var,2) + PIB_var + lag(PIB_var,3)) %>% summary
+
+m1
+```
+
+
+```{r}
+m2 <- lm(data = df_train,formula = Turistas_var ~ lag(TCR_var,5) + 
      lag(TCR_var,3) + PIB_var + lag(PIB_var,3)) %>% summary
+
+m2
 ```
 
 
-```{r pressure, echo=FALSE}
-# Chequeo la estacionalidad
+```{r}
+m3 <- lm(data = df_train, formula = Turistas_var ~ lag(Turistas_var,1) + lag(Turistas_var,2) + lag(Turistas_var,3) + lag(Turistas_var,12) + lag(TCR_var,1) + 
+     lag(TCR_var,5) + PIB_var + lag(PIB_var,3)) %>% summary
 
-df_turismo1 <- df_turismo %>% 
-  filter(!is.na(Turistas_var))
+m3
+```
 
-library(tseries)
 
-print(adf.test(df_turismo1$Turistas_var))
-# Estacionaria
-print(adf.test(df_turismo1$TCR_var))
-# Estacionaria
-print(adf.test(df_turismo1$PIB_var))
-# Estacionaria
-print(adf.test(df_turismo1$PIB))
-# Estacionaria
+```{r}
+lmMod <- lm(data = df_train, formula = Turistas_var ~ Turistas_var_1 + Turistas_var_2 + Turistas_var_3 + Turistas_var_12 + TCR_var_1 + TCR_var_5 + PIB_var + PIB_var_3)  # build the model
+summary(lmMod)
+AIC (lmMod)
+
+pred1 <- predict(lmMod, newdata = df_test)
+rmse <- sqrt(sum((exp(pred1) - df_test$Turistas_var)^2)/length(df_test$Turistas_var))
+mse <- sum((exp(pred1) - df_test$Turistas_var)^2)/length(df_test$Turistas_var)
+RMSE(pred1, df_test$Turistas_var)
+c(RMSE = rmse, R2=summary(lmMod)$r.squared)
+
+# nice plot
+plot(df_test$Turistas_var, type='l')
+```
+
+```{r}
+prediction <- pred1 %>% 
+  as.data.frame() %>% 
+  rename(prediction = ".")
+
+df_test <- bind_cols(df_test, prediction)
+
+```
+
+```{r}
+ggplot(data = df_turismo1) +
+  geom_line(mapping = aes(x = periodo, y = Turistas_var)) +
+  geom_vline(xintercept = as.Date('2019-03-01'), linetype="dotted", color = "red") +
+  geom_line(data = df_test, mapping = aes(x = periodo, y = prediction, color = "blue"))
+  
+```
+
+
+```{r}
+df_prediction <- df_test %>% 
+  select(periodo, Turistas_var, prediction)
+
+# Obtengo el dataset original con cant de turistas nominales
+
+df_original <- read.csv("df_final_coma.csv", stringsAsFactors = FALSE)
+
+df_original <- df_original %>% 
+  mutate(periodo = as.Date(X),
+         Turistas = as.numeric(gsub(",",".", Turistas))) %>% 
+  select(-X)
+
+df_original <- left_join(df_original, df_prediction, by = "periodo")
+
+df_original <- df_original %>% 
+  mutate(cant_turistas_prediction = Turistas * ((- Turistas_var + 1) / (- prediction + 1)))
+
+df_cant_turistas_pred <- df_original %>% 
+  filter(!is.na(cant_turistas_prediction)) %>% 
+  select(cant_turistas_prediction, periodo)
+
+```
+
+```{r}
+ggplot(data = df_original) +
+  geom_line(mapping = aes(x = periodo, y = Turistas)) +
+  geom_vline(xintercept = as.Date('2019-03-01'), linetype="dotted", color = "red") +
+  geom_line(data = df_cant_turistas_pred, mapping = aes(x = periodo, y = cant_turistas_prediction), colour ="blue")
+
+```
+
+
+
+```{r}
+m4 <- lm(data = df_train, formula = Turistas_var ~ lag(Turistas_var,1) + lag(Turistas_var,12) + lag(TCR_var,1) + 
+     lag(TCR_var,5) + PIB_var + lag(PIB_var,3)) %>% summary
+
+m4
 ```
